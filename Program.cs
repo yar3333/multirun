@@ -11,13 +11,13 @@ namespace multirun
 {
     class Program
     {
-	    static bool verbose = false;
-	    static string baseDirPath = "";
+	    static bool verbose;
+	    static string baseDirPath;
         
         static void Main(string[] args)
 	    {
 		    var options = new CommandLineOptions();
-		    options.AddRequired<string>("baseDirPath", help:"Path to directory to file search or a path to the text file contains file paths (one per line).");
+		    options.AddRequired<string>("dirOrFile", help:"Path to directory to file search or a path to the text file contains file paths (one per line).");
 		    options.AddOptional("verbose", false, new[] { "-v", "--verbose" }, help:"Show command to run.");
 		    options.AddOptional("filter", "", new[] { "-f", "--filter" }, help:"File path filter (regular expression like '[.](hx|html)$' or file name pattern like '*.hx;*.html').");
 		    options.AddOptional("checkPath", "", new[] { "-u", "--update" }, help:"Update files in <baseDirPath>.\n"
@@ -38,7 +38,7 @@ namespace multirun
 		    {
                 options.Parse(args.TakeWhile(x => x != "--"));
 			    
-			    baseDirPath = options.Get<string>("baseDirPath");
+			    var dirOrFile = options.Get<string>("dirOrFile");
 			    
                 verbose = options.Get<bool>("verbose");
                 var filter = options.Get<string>("filter");
@@ -47,7 +47,7 @@ namespace multirun
                 var command = options.Get<string>("command");
                 var commandArgs = options.Get<List<string>>("commandArgs").Concat(args.SkipWhile(x => x != "--").Skip(1));
 			    
-			    if (baseDirPath == "") error("Argument <baseDirPath> must be specified.");
+			    if (dirOrFile == "") error("Argument <dirOrFile> must be specified.");
 			    if (command == "") error("Argument <command> must be specified.");
 			    
 			    if (filter == "*")
@@ -60,19 +60,21 @@ namespace multirun
 				    filter = string.Join("|", filter.Split(';').Select(s => "^" + s.Trim().Replace(".", "\\.").Replace("*", ".*").Replace("?", ".") + "$"));
 			    }
 			    
-			    if (Directory.Exists(baseDirPath))
+			    if (Directory.Exists(dirOrFile))
 			    {
-					processDir(baseDirPath, new Regex(filter, RegexOptions.IgnoreCase), checkPath != "" ? checkPath : null, command, commandArgs.ToArray());
+                    baseDirPath = dirOrFile;
+					processDir(dirOrFile, new Regex(filter, RegexOptions.IgnoreCase), checkPath != "" ? checkPath : null, command, commandArgs.ToArray());
 				}
-				else if (File.Exists(baseDirPath))
-				{
-					processList(baseDirPath, new Regex(filter, RegexOptions.IgnoreCase), checkPath != "" ? checkPath : null, command, commandArgs.ToArray());
+				else if (File.Exists(dirOrFile))
+                {
+                    baseDirPath = "";
+					processList(dirOrFile, new Regex(filter, RegexOptions.IgnoreCase), checkPath != "" ? checkPath : null, command, commandArgs.ToArray());
 				}
 			    else
 			    {
-				    error("Directory or file '" + baseDirPath + "' is not found.");
+				    error("Directory or file '" + dirOrFile + "' is not found.");
 			    }
-		    }
+            }
 		    else
 		    {
 			    help(options);
@@ -140,16 +142,16 @@ namespace multirun
 			     || File.GetLastWriteTimeUtc(path) > File.GetLastWriteTimeUtc(realCheckPath)
 			    ) {
 				    var args = commandArgs.Select(arg => applySubs(arg, path)).ToArray();
-				    if (verbose) Console.WriteLine("[run] " + command + " " + string.Join(" ", args.Select(lazyQuote)));
+				    if (verbose) Console.WriteLine("[run] " + command + " " + string.Join(" ", args.Select(encodeParameter)));
 				    
-				    Process.Start(command, string.Join(" ", args.Select(EncodeParameterArgument)));
+				    Process.Start(command, string.Join(" ", args.Select(encodeParameter)));
 			    }
 		    }
 	    }
 	    
 	    static string applySubs(string s, string path)
 	    {
-		    var R = Path.GetDirectoryName(path).Substring(baseDirPath.Length);
+            var R = Path.GetDirectoryName(path).Substring(baseDirPath.Length);
 		    if (R == "") R = ".";
 		    
 		    var E = Path.GetExtension(path);
@@ -164,51 +166,11 @@ namespace multirun
 		    return s;
 	    }
 	    
-	    static string lazyQuote(string s)
-	    {
-		    return s.IndexOf(" ") < 0 ? s : "\"$s";
-	    }
-
-        private static string EncodeParameterArgument(string argument)
+        private static string encodeParameter(string argument)
         {
             if (argument == null) throw new ArgumentNullException(nameof(argument));
-
             if (argument.Length > 0 && argument.IndexOfAny(" \t\n\v\"".ToCharArray()) == -1) return argument;
-
-            var quoted = new StringBuilder();
-            quoted.Append('"');
-
-            var numberBackslashes = 0;
-
-            foreach (var chr in argument)
-            {
-                switch (chr)
-                {
-                    case '\\':
-                        numberBackslashes++;
-                        continue;
-                    case '"':
-                        // Escape all backslashes and the following
-                        // double quotation mark.
-                        quoted.Append('\\', numberBackslashes*2 + 1);
-                        quoted.Append(chr);
-                        break;
-                    default:
-                        // Backslashes aren't special here.
-                        quoted.Append('\\', numberBackslashes);
-                        quoted.Append(chr);
-                        break;
-                }
-                numberBackslashes = 0;
-            }
-
-            // Escape all backslashes, but let the terminating
-            // double quotation mark we add below be interpreted
-            // as a metacharacter.
-            quoted.Append('\\', numberBackslashes*2);
-            quoted.Append('"');
-
-            return quoted.ToString();
+            return $"\"{argument}\"";
         }
     }
 }
