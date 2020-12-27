@@ -143,8 +143,12 @@ namespace multirun
 			    ) {
 				    var args = commandArgs.Select(arg => applySubs(arg, path)).ToArray();
 				    if (verbose) Console.WriteLine("[run] " + command + " " + string.Join(" ", args.Select(encodeParameter)));
-				    
-				    Process.Start(command, string.Join(" ", args.Select(encodeParameter)));
+
+                    var p = Process.Start(new ProcessStartInfo(command, string.Join(" ", args.Select(encodeParameter)))
+                    {
+						UseShellExecute = false
+                    });
+                    p?.WaitForExit();
 			    }
 		    }
 	    }
